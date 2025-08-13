@@ -22,7 +22,19 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const database = getDatabase(app);
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+
+    // Automatically sign out on every page refresh
+    try {
+        await signOut(auth);
+    } catch (error) {
+        console.error("Error signing out on refresh:", error);
+    }
+
+    // Disable right-click context menu
+    document.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+    });
 
     // --- DOM Elements ---
     const loginContainer = document.getElementById('login-container');
@@ -45,13 +57,42 @@ document.addEventListener('DOMContentLoaded', () => {
     const posCancelBtn = document.getElementById('pos-cancel-btn');
     const posCheckoutBtn = document.getElementById('pos-checkout-btn');
     // New Print element
-    const printBtn = document.getElementById('print-btn');
+    const printInventoryBtn = document.getElementById('print-inventory-btn');
     // New Deleted Items elements
     const deletedItemsBtn = document.getElementById('deleted-items-btn');
     const deletedItemsModal = document.getElementById('deleted-items-modal');
     const deletedItemsModalCloseBtn = document.getElementById('deleted-items-modal-close-btn');
     const deletedItemsList = document.getElementById('deleted-items-list');
     const noDeletedItemsMessage = document.getElementById('no-deleted-items');
+    const selectAllDeletedItems = document.getElementById('select-all-deleted-items');
+    const bulkDeleteDeletedItemsBtn = document.getElementById('bulk-delete-deleted-items-btn');
+    // New Sold Items elements
+    const soldItemsBtn = document.getElementById('sold-items-btn');
+    const soldItemsModal = document.getElementById('sold-items-modal');
+    const soldItemsModalCloseBtn = document.getElementById('sold-items-modal-close-btn');
+    const soldItemsList = document.getElementById('sold-items-list');
+    const noSoldItemsMessage = document.getElementById('no-sold-items');
+    const printSoldItemsBtn = document.getElementById('print-sold-items-btn');
+    const selectAllSoldItems = document.getElementById('select-all-sold-items');
+    const bulkDeleteSoldItemsBtn = document.getElementById('bulk-delete-sold-items-btn');
+    // New Deleted Sold Items elements
+    const deletedSoldItemsBtn = document.getElementById('deleted-sold-items-btn');
+    const deletedSoldItemsModal = document.getElementById('deleted-sold-items-modal');
+    const deletedSoldItemsModalCloseBtn = document.getElementById('deleted-sold-items-modal-close-btn');
+    const deletedSoldItemsList = document.getElementById('deleted-sold-items-list');
+    const noDeletedSoldItemsMessage = document.getElementById('no-deleted-sold-items');
+    const selectAllDeletedSoldItems = document.getElementById('select-all-deleted-sold-items');
+    const bulkDeleteDeletedSoldItemsBtn = document.getElementById('bulk-delete-deleted-sold-items-btn');
+    
+    // Inventory bulk delete elements
+    const selectAllInventory = document.getElementById('select-all-inventory');
+    const bulkDeleteInventoryBtn = document.getElementById('bulk-delete-inventory-btn');
+    
+    // Reset site elements
+    const resetSiteBtn = document.getElementById('reset-site-btn');
+    const resetSiteConfirmationModal = document.getElementById('reset-site-confirmation-modal');
+    const resetSiteConfirmBtn = document.getElementById('reset-site-confirm-btn');
+    const resetSiteCancelBtn = document.getElementById('reset-site-cancel-btn');
 
 
     // Existing inventory elements
@@ -107,6 +148,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let cart = [];
     // New Deleted Items History state variable
     let deletedItemsHistory = [];
+    // New Sold Items History state variable
+    let soldItemsHistory = [];
+    // New Deleted Sold Items History state variable
+    let deletedSoldItemsHistory = [];
 
 
     // --- Authentication State Listener ---
@@ -122,8 +167,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderInventory();
                 if (userRole === 'superadmin') {
                     deletedItemsBtn.classList.remove('hidden');
+                    deletedSoldItemsBtn.classList.remove('hidden');
+                    selectAllInventory.classList.remove('hidden');
+                    bulkDeleteInventoryBtn.classList.remove('hidden');
+                    resetSiteBtn.classList.remove('hidden');
                 } else {
                     deletedItemsBtn.classList.add('hidden');
+                    deletedSoldItemsBtn.classList.add('hidden');
+                    selectAllInventory.classList.add('hidden');
+                    bulkDeleteInventoryBtn.classList.add('hidden');
+                    resetSiteBtn.classList.add('hidden');
                 }
             } else {
                 alert("You do not have the necessary permissions to access this application.");
@@ -185,13 +238,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 const deletedItemDiv = document.createElement('div');
                 deletedItemDiv.classList.add('flex', 'items-center', 'justify-between', 'bg-white', 'p-3', 'rounded-md', 'shadow-sm', 'border', 'border-gray-200');
                 deletedItemDiv.innerHTML = `
-                    <div>
-                        <h5 class="font-semibold text-gray-800">${item.name}</h5>
-                        <p class="text-sm text-gray-500">SKU: ${item.sku} | Deleted: ${item.deletionDate}</p>
+                    <div class="flex items-center space-x-4">
+                        <input type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 deleted-item-checkbox" data-index="${index}">
+                        <div>
+                            <h5 class="font-semibold text-gray-800">${item.name}</h5>
+                            <p class="text-sm text-gray-500">SKU: ${item.sku} | Deleted: ${item.deletionDate}</p>
+                        </div>
                     </div>
-                    <button class="restore-item-btn bg-green-500 text-white p-2 rounded-md hover:bg-green-600 transition" data-index="${index}">
-                        <i class="fas fa-undo"></i> Restore
-                    </button>
+                    <div class="flex items-center space-x-2">
+                        <button class="restore-item-btn bg-green-500 text-white p-2 rounded-md hover:bg-green-600 transition" data-index="${index}">
+                            <i class="fas fa-undo"></i> Restore
+                        </button>
+                        <button class="delete-item-permanently-btn bg-red-500 text-white p-2 rounded-md hover:bg-red-600 transition" data-index="${index}">
+                            <i class="fas fa-trash"></i> Delete
+                        </button>
+                    </div>
                 `;
                 deletedItemsList.appendChild(deletedItemDiv);
             });
@@ -212,18 +273,256 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     deletedItemsList.addEventListener('click', (e) => {
-        const target = e.target.closest('.restore-item-btn');
-        if (target) {
-            const index = parseInt(target.dataset.index);
+        const target = e.target.closest('button');
+        if (!target) return;
+
+        const index = parseInt(target.dataset.index);
+
+        if (target.classList.contains('restore-item-btn')) {
             const itemToRestore = deletedItemsHistory.splice(index, 1)[0];
-            
             inventory.push(itemToRestore);
-            
             saveInventory();
             renderInventory();
             renderDeletedItems();
             alert(`Item "${itemToRestore.name}" restored successfully.`);
+        } else if (target.classList.contains('delete-item-permanently-btn')) {
+            const itemToDelete = deletedItemsHistory.splice(index, 1)[0];
+            saveInventory();
+            renderDeletedItems();
+            alert(`Item "${itemToDelete.name}" permanently deleted.`);
         }
+    });
+
+    selectAllDeletedItems.addEventListener('change', (e) => {
+        const checkboxes = document.querySelectorAll('.deleted-item-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = e.target.checked;
+        });
+    });
+
+    bulkDeleteDeletedItemsBtn.addEventListener('click', () => {
+        const checkboxes = document.querySelectorAll('.deleted-item-checkbox:checked');
+        if (checkboxes.length === 0) {
+            alert("Please select items to delete.");
+            return;
+        }
+
+        const indicesToDelete = Array.from(checkboxes).map(cb => parseInt(cb.dataset.index));
+        deletedItemsHistory = deletedItemsHistory.filter((_, index) => !indicesToDelete.includes(index));
+        
+        saveInventory();
+        renderDeletedItems();
+        alert(`${indicesToDelete.length} items permanently deleted.`);
+    });
+
+
+    // --- Sold Items History Functions ---
+    const renderSoldItems = () => {
+        soldItemsList.innerHTML = '';
+        if (soldItemsHistory.length === 0) {
+            noSoldItemsMessage.classList.remove('hidden');
+        } else {
+            noSoldItemsMessage.classList.add('hidden');
+            soldItemsHistory.forEach((item, index) => {
+                const soldItemDiv = document.createElement('div');
+                soldItemDiv.classList.add('grid', 'grid-cols-7', 'items-center', 'bg-white', 'p-3', 'rounded-md', 'shadow-sm', 'border', 'border-gray-200');
+                soldItemDiv.innerHTML = `
+                    <div class="flex items-center space-x-4">
+                        <input type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 sold-item-checkbox" data-index="${index}">
+                    </div>
+                    <div>
+                        <h5 class="font-semibold text-gray-800">${item.name}</h5>
+                        <p class="text-sm text-gray-500">SKU: ${item.sku}</p>
+                    </div>
+                    <div class="text-center">
+                        <p class="text-sm text-gray-500">Quantity</p>
+                        <p class="font-semibold text-gray-800">${item.quantity}</p>
+                    </div>
+                    <div class="text-center">
+                        <p class="text-sm text-gray-500">Price</p>
+                        <p class="font-semibold text-gray-800">$${item.price.toFixed(2)}</p>
+                    </div>
+                    <div class="text-center">
+                        <p class="text-sm text-gray-500">Total</p>
+                        <p class="font-semibold text-gray-800">$${(item.quantity * item.price).toFixed(2)}</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm text-gray-500">${new Date(item.saleDate).toLocaleString()}</p>
+                    </div>
+                    <div class="text-right">
+                        <button class="delete-sold-item-btn text-red-600 hover:text-red-800 transition" data-index="${index}">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                `;
+                soldItemsList.appendChild(soldItemDiv);
+            });
+        }
+    };
+
+    soldItemsBtn.addEventListener('click', () => {
+        soldItemsModal.classList.remove('hidden');
+        renderSoldItems();
+    });
+
+    soldItemsModalCloseBtn.addEventListener('click', () => {
+        soldItemsModal.classList.add('hidden');
+    });
+
+    soldItemsList.addEventListener('click', (e) => {
+        const target = e.target.closest('.delete-sold-item-btn');
+        if (target) {
+            const index = parseInt(target.dataset.index);
+            const itemToDelete = soldItemsHistory.splice(index, 1)[0];
+            deletedSoldItemsHistory.push({ ...itemToDelete, deletionDate: new Date().toLocaleString() });
+            saveInventory();
+            renderSoldItems();
+            alert(`Sold item "${itemToDelete.name}" deleted.`);
+        }
+    });
+
+    selectAllSoldItems.addEventListener('change', (e) => {
+        const checkboxes = document.querySelectorAll('.sold-item-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = e.target.checked;
+        });
+    });
+
+    bulkDeleteSoldItemsBtn.addEventListener('click', () => {
+        const checkboxes = document.querySelectorAll('.sold-item-checkbox:checked');
+        if (checkboxes.length === 0) {
+            alert("Please select items to delete.");
+            return;
+        }
+
+        const indicesToDelete = Array.from(checkboxes).map(cb => parseInt(cb.dataset.index));
+        const itemsToDelete = soldItemsHistory.filter((_, index) => indicesToDelete.includes(index));
+        
+        itemsToDelete.forEach(item => deletedSoldItemsHistory.push({ ...item, deletionDate: new Date().toLocaleString() }));
+        soldItemsHistory = soldItemsHistory.filter((_, index) => !indicesToDelete.includes(index));
+        
+        saveInventory();
+        renderSoldItems();
+        alert(`${indicesToDelete.length} sold items deleted.`);
+    });
+
+    printSoldItemsBtn.addEventListener('click', () => {
+        const printableArea = document.getElementById('printable-area');
+        printableArea.innerHTML = `
+            <h1 class="text-2xl font-bold mb-4">Sold Items History</h1>
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item Name</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    ${soldItemsHistory.map(item => `
+                        <tr>
+                            <td class="px-4 py-2">${item.name}</td>
+                            <td class="px-4 py-2">${item.sku}</td>
+                            <td class="px-4 py-2">${item.quantity}</td>
+                            <td class="px-4 py-2">$${item.price.toFixed(2)}</td>
+                            <td class="px-4 py-2">$${(item.quantity * item.price).toFixed(2)}</td>
+                            <td class="px-4 py-2">${new Date(item.saleDate).toLocaleString()}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+        window.print();
+    });
+
+    // --- Deleted Sold Items History Functions ---
+    const renderDeletedSoldItems = () => {
+        deletedSoldItemsList.innerHTML = '';
+        if (deletedSoldItemsHistory.length === 0) {
+            noDeletedSoldItemsMessage.classList.remove('hidden');
+        } else {
+            noDeletedSoldItemsMessage.classList.add('hidden');
+            deletedSoldItemsHistory.forEach((item, index) => {
+                const deletedSoldItemDiv = document.createElement('div');
+                deletedSoldItemDiv.classList.add('flex', 'items-center', 'justify-between', 'bg-white', 'p-3', 'rounded-md', 'shadow-sm', 'border', 'border-gray-200');
+                deletedSoldItemDiv.innerHTML = `
+                    <div class="flex items-center space-x-4">
+                        <input type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 deleted-sold-item-checkbox" data-index="${index}">
+                        <div>
+                            <h5 class="font-semibold text-gray-800">${item.name}</h5>
+                            <p class="text-sm text-gray-500">SKU: ${item.sku} | Deleted: ${item.deletionDate}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button class="restore-sold-item-btn bg-green-500 text-white p-2 rounded-md hover:bg-green-600 transition" data-index="${index}">
+                            <i class="fas fa-undo"></i> Restore
+                        </button>
+                        <button class="delete-sold-item-permanently-btn bg-red-500 text-white p-2 rounded-md hover:bg-red-600 transition" data-index="${index}">
+                            <i class="fas fa-trash"></i> Delete
+                        </button>
+                    </div>
+                `;
+                deletedSoldItemsList.appendChild(deletedSoldItemDiv);
+            });
+        }
+    };
+
+    deletedSoldItemsBtn.addEventListener('click', () => {
+        if (userRole === 'superadmin') {
+            deletedSoldItemsModal.classList.remove('hidden');
+            renderDeletedSoldItems();
+        } else {
+            alert("You do not have permission to access this history.");
+        }
+    });
+
+    deletedSoldItemsModalCloseBtn.addEventListener('click', () => {
+        deletedSoldItemsModal.classList.add('hidden');
+    });
+
+    deletedSoldItemsList.addEventListener('click', (e) => {
+        const target = e.target.closest('button');
+        if (!target) return;
+
+        const index = parseInt(target.dataset.index);
+
+        if (target.classList.contains('restore-sold-item-btn')) {
+            const itemToRestore = deletedSoldItemsHistory.splice(index, 1)[0];
+            soldItemsHistory.push(itemToRestore);
+            saveInventory();
+            renderDeletedSoldItems();
+            alert(`Deleted sold item "${itemToRestore.name}" restored.`);
+        } else if (target.classList.contains('delete-sold-item-permanently-btn')) {
+            const itemToDelete = deletedSoldItemsHistory.splice(index, 1)[0];
+            saveInventory();
+            renderDeletedSoldItems();
+            alert(`Sold item "${itemToDelete.name}" permanently deleted.`);
+        }
+    });
+
+    selectAllDeletedSoldItems.addEventListener('change', (e) => {
+        const checkboxes = document.querySelectorAll('.deleted-sold-item-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = e.target.checked;
+        });
+    });
+
+    bulkDeleteDeletedSoldItemsBtn.addEventListener('click', () => {
+        const checkboxes = document.querySelectorAll('.deleted-sold-item-checkbox:checked');
+        if (checkboxes.length === 0) {
+            alert("Please select items to delete.");
+            return;
+        }
+
+        const indicesToDelete = Array.from(checkboxes).map(cb => parseInt(cb.dataset.index));
+        deletedSoldItemsHistory = deletedSoldItemsHistory.filter((_, index) => !indicesToDelete.includes(index));
+        
+        saveInventory();
+        renderDeletedSoldItems();
+        alert(`${indicesToDelete.length} sold items permanently deleted.`);
     });
 
     // --- POS Functions ---
@@ -239,7 +538,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        filteredItems.forEach((item, index) => {
+        filteredItems.forEach((item) => {
             const productCard = document.createElement('div');
             productCard.classList.add('flex', 'items-center', 'justify-between', 'bg-white', 'p-3', 'rounded-md', 'shadow-sm', 'border', 'border-gray-200');
             productCard.innerHTML = `
@@ -249,7 +548,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div class="flex items-center space-x-2">
                     <span class="text-lg font-bold text-green-600">$${parseFloat(item.price).toFixed(2)}</span>
-                    <button class="add-to-cart-btn bg-indigo-500 text-white p-2 rounded-md hover:bg-indigo-600 transition disabled:opacity-50 disabled:cursor-not-allowed" data-index="${index}" ${item.quantity === 0 ? 'disabled' : ''}>
+                    <button class="add-to-cart-btn bg-indigo-500 text-white p-2 rounded-md hover:bg-indigo-600 transition disabled:opacity-50 disabled:cursor-not-allowed" data-sku="${item.sku}" ${item.quantity === 0 ? 'disabled' : ''}>
                         <i class="fas fa-plus"></i>
                     </button>
                 </div>
@@ -281,7 +580,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <p class="text-sm text-gray-500">$${parseFloat(cartItem.price).toFixed(2)} each</p>
                 </div>
                 <div class="flex items-center space-x-2">
-                    <input type="number" min="1" max="${inventory[cartItem.inventoryIndex].quantity}" value="${cartItem.quantity}" class="cart-quantity-input w-16 text-center border rounded-md p-1" data-index="${index}">
+                    <input type="number" min="1" max="${inventory.find(i => i.sku === cartItem.sku).quantity + cartItem.quantity}" value="${cartItem.quantity}" class="cart-quantity-input w-16 text-center border rounded-md p-1" data-index="${index}">
                     <span class="font-bold text-gray-800">$${itemTotal.toFixed(2)}</span>
                     <button class="remove-from-cart-btn text-red-600 hover:text-red-800 transition" data-index="${index}">
                         <i class="fas fa-trash"></i>
@@ -299,31 +598,34 @@ document.addEventListener('DOMContentLoaded', () => {
         posTotal.textContent = `$${totalAmount.toFixed(2)}`;
     };
 
-    const addToCart = (inventoryIndex) => {
-        const item = inventory[inventoryIndex];
-        const existingCartItem = cart.find(cartItem => cartItem.inventoryIndex === inventoryIndex);
+    const addToCart = (sku) => {
+        const item = inventory.find(i => i.sku === sku);
+        const cartIndex = cart.findIndex(cartItem => cartItem.sku === sku);
 
-        if (existingCartItem) {
-            if (existingCartItem.quantity + 1 <= item.quantity) {
-                existingCartItem.quantity += 1;
+        if (cartIndex > -1) {
+            if (cart[cartIndex].quantity < item.quantity) {
+                cart[cartIndex].quantity++;
             } else {
                 alert(`Cannot add more than ${item.quantity} of ${item.name} to the cart.`);
             }
         } else {
-            cart.push({
-                ...item,
-                quantity: 1,
-                inventoryIndex: inventoryIndex
-            });
+            if (item.quantity > 0) {
+                cart.push({ ...item, quantity: 1 });
+            } else {
+                alert(`${item.name} is out of stock.`);
+            }
         }
         renderCart();
     };
 
     const updateCartQuantity = (cartIndex, newQuantity) => {
-        if (newQuantity <= 0) return;
+        if (newQuantity <= 0) {
+            removeFromCart(cartIndex);
+            return;
+        };
         
         const cartItem = cart[cartIndex];
-        const inventoryItem = inventory[cartItem.inventoryIndex];
+        const inventoryItem = inventory.find(i => i.sku === cartItem.sku);
 
         if (newQuantity > inventoryItem.quantity) {
             alert(`Cannot set quantity higher than available stock (${inventoryItem.quantity}).`);
@@ -346,7 +648,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         for (const cartItem of cart) {
-            const inventoryItem = inventory[cartItem.inventoryIndex];
+            const inventoryItem = inventory.find(i => i.sku === cartItem.sku);
             if (cartItem.quantity > inventoryItem.quantity) {
                 alert(`Cannot process sale. Insufficient stock for ${inventoryItem.name}.`);
                 return;
@@ -357,7 +659,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let totalSaleProfit = 0;
 
         for (const cartItem of cart) {
-            const inventoryItem = inventory[cartItem.inventoryIndex];
+            const inventoryItem = inventory.find(i => i.sku === cartItem.sku);
             
             inventoryItem.quantity -= cartItem.quantity;
             
@@ -372,6 +674,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 quantity: cartItem.quantity,
                 revenue: itemRevenue,
                 profit: itemProfit
+            });
+
+            soldItemsHistory.push({
+                ...cartItem,
+                saleDate: new Date().toISOString()
             });
         }
 
@@ -416,8 +723,8 @@ document.addEventListener('DOMContentLoaded', () => {
     posProductList.addEventListener('click', (e) => {
         const target = e.target.closest('.add-to-cart-btn');
         if (target) {
-            const index = parseInt(target.dataset.index);
-            addToCart(index);
+            const sku = target.dataset.sku;
+            addToCart(sku);
         }
     });
 
@@ -455,17 +762,23 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     deletedItemsList.addEventListener('click', (e) => {
-        const target = e.target.closest('.restore-item-btn');
-        if (target) {
-            const index = parseInt(target.dataset.index);
+        const target = e.target.closest('button');
+        if (!target) return;
+
+        const index = parseInt(target.dataset.index);
+
+        if (target.classList.contains('restore-item-btn')) {
             const itemToRestore = deletedItemsHistory.splice(index, 1)[0];
-            
             inventory.push(itemToRestore);
-            
             saveInventory();
             renderInventory();
             renderDeletedItems();
             alert(`Item "${itemToRestore.name}" restored successfully.`);
+        } else if (target.classList.contains('delete-item-permanently-btn')) {
+            const itemToDelete = deletedItemsHistory.splice(index, 1)[0];
+            saveInventory();
+            renderDeletedItems();
+            alert(`Item "${itemToDelete.name}" permanently deleted.`);
         }
     });
 
@@ -475,6 +788,8 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('totalProfit', totalProfit);
         localStorage.setItem('salesHistory', JSON.stringify(salesHistory));
         localStorage.setItem('deletedItemsHistory', JSON.stringify(deletedItemsHistory));
+        localStorage.setItem('soldItemsHistory', JSON.stringify(soldItemsHistory));
+        localStorage.setItem('deletedSoldItemsHistory', JSON.stringify(deletedSoldItemsHistory));
     };
 
     const loadInventory = () => {
@@ -491,6 +806,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const storedDeletedItems = localStorage.getItem('deletedItemsHistory');
         if (storedDeletedItems) {
             deletedItemsHistory = JSON.parse(storedDeletedItems);
+        }
+        const storedSoldItems = localStorage.getItem('soldItemsHistory');
+        if (storedSoldItems) {
+            soldItemsHistory = JSON.parse(storedSoldItems);
+        }
+        const storedDeletedSoldItems = localStorage.getItem('deletedSoldItemsHistory');
+        if (storedDeletedSoldItems) {
+            deletedSoldItemsHistory = JSON.parse(storedDeletedSoldItems);
         }
     };
 
@@ -510,7 +833,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const updateDashboard = () => {
-        totalItemsCard.textContent = inventory.length;
+        totalItemsCard.textContent = inventory.reduce((sum, item) => sum + item.quantity, 0);
         const totalValue = inventory.reduce((sum, item) => sum + (item.quantity * item.cost), 0);
         totalValueCard.textContent = `$${totalValue.toFixed(2)}`;
         const lowStockCount = inventory.filter(item => item.quantity <= lowStockThreshold).length;
@@ -533,13 +856,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 row.classList.add('hover:bg-gray-50', isLowStock ? 'bg-yellow-50' : 'bg-white');
 
                 row.innerHTML = `
+                    <td class="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
+                        <input type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 inventory-item-checkbox" data-index="${index}">
+                    </td>
                     <td class="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">${item.name}</td>
                     <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${item.sku}</td>
                     <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${item.supplier}</td>
                     <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${item.quantity}</td>
                     <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${item.location}</td>
                     <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">$${parseFloat(item.price).toFixed(2)}</td>
-                    <td class="px-4 py-2 whitespace-nowrap text-center text-sm font-medium">
+                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${item.dateAdded ? new Date(item.dateAdded).toLocaleDateString() : 'N/A'}</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-center text-sm font-medium hidden-print">
                         <div class="flex justify-center space-x-2">
                             <button class="sell-btn text-green-600 hover:text-green-900 transition duration-150 ease-in-out" data-index="${index}">
                                 <i class="fas fa-shopping-cart"></i>
@@ -572,13 +899,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const price = parseFloat(itemPriceInput.value);
 
         if (editIndex !== -1) {
-            inventory[editIndex] = { name, sku, description, quantity, location, supplier, cost, price };
+            inventory[editIndex] = { ...inventory[editIndex], name, sku, description, quantity, location, supplier, cost, price };
             editIndex = -1;
             formTitle.textContent = 'Add New Item';
             formButton.textContent = 'Add Item';
             cancelButton.classList.add('hidden');
         } else {
-            inventory.push({ name, sku, description, quantity, location, supplier, cost, price });
+            inventory.push({ name, sku, description, quantity, location, supplier, cost, price, dateAdded: new Date().toISOString() });
         }
 
         saveInventory();
@@ -685,8 +1012,14 @@ document.addEventListener('DOMContentLoaded', () => {
             profit: profit
         });
         
+        soldItemsHistory.push({
+            ...item,
+            quantity: quantitySold,
+            saleDate: new Date().toISOString()
+        });
+
         totalRevenue += revenue;
-        totalProfit += totalSaleProfit;
+        totalProfit += profit;
         item.quantity -= quantitySold;
 
         saveInventory();
@@ -711,11 +1044,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     exportBtn.addEventListener('click', () => {
-        const headers = ["name", "sku", "supplier", "description", "quantity", "location", "cost", "price"];
+        const headers = ["name", "sku", "supplier", "description", "quantity", "location", "cost", "price", "dateAdded"];
         const csvRows = [headers.join(',')];
         for (const item of inventory) {
             const values = headers.map(header => {
-                const value = item[header];
+                let value = item[header];
+                if (header === 'dateAdded' && value) {
+                    value = new Date(value).toLocaleDateString();
+                }
                 return (value === undefined || value === null) ? '' : `"${String(value).replace(/"/g, '""')}"`;
             });
             csvRows.push(values.join(','));
@@ -771,6 +1107,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         item[header] = value;
                     }
                 });
+                if (!item.dateAdded) {
+                    item.dateAdded = new Date().toISOString();
+                }
                 importedItems.push(item);
             }
             inventory = importedItems;
@@ -782,7 +1121,61 @@ document.addEventListener('DOMContentLoaded', () => {
         reader.readAsText(file);
     });
 
-    printBtn.addEventListener('click', () => {
+    printInventoryBtn.addEventListener('click', () => {
+        const printableArea = document.getElementById('printable-area');
+        printableArea.innerHTML = document.getElementById('inventory-container').innerHTML;
         window.print();
+    });
+
+    selectAllInventory.addEventListener('change', (e) => {
+        const checkboxes = document.querySelectorAll('.inventory-item-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = e.target.checked;
+        });
+    });
+
+    bulkDeleteInventoryBtn.addEventListener('click', () => {
+        const checkboxes = document.querySelectorAll('.inventory-item-checkbox:checked');
+        if (checkboxes.length === 0) {
+            alert("Please select items to delete.");
+            return;
+        }
+
+        const indicesToDelete = Array.from(checkboxes).map(cb => parseInt(cb.dataset.index));
+        const itemsToDelete = inventory.filter((_, index) => indicesToDelete.includes(index));
+
+        itemsToDelete.forEach(item => deletedItemsHistory.push({ ...item, deletionDate: new Date().toLocaleString() }));
+        inventory = inventory.filter((_, index) => !indicesToDelete.includes(index));
+
+        saveInventory();
+        renderInventory();
+        alert(`${indicesToDelete.length} items deleted.`);
+    });
+    
+    resetSiteBtn.addEventListener('click', () => {
+        resetSiteConfirmationModal.classList.remove('hidden');
+    });
+
+    resetSiteCancelBtn.addEventListener('click', () => {
+        resetSiteConfirmationModal.classList.add('hidden');
+    });
+
+    resetSiteConfirmBtn.addEventListener('click', () => {
+        localStorage.clear();
+        inventory = [];
+        totalRevenue = 0;
+        totalProfit = 0;
+        salesHistory = [];
+        deletedItemsHistory = [];
+        soldItemsHistory = [];
+        deletedSoldItemsHistory = [];
+        
+        renderInventory();
+        updateDashboard();
+        
+        resetSiteConfirmationModal.classList.add('hidden');
+        alert("Site has been reset successfully.");
+        
+        signOut(auth);
     });
 });
